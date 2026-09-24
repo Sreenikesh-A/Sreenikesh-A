@@ -8,7 +8,7 @@
 
 <h3><code>sreenikesh@github ~ $ ./whoami</code></h3>
 
-<img src="./sreenikesh-ascii.svg" width="500" />
+<img src="./sree-ascii.svg" width="500" />
 
 <br><br>
 
