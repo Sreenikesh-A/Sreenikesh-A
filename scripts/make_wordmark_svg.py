@@ -1,7 +1,8 @@
 """
-Render "SREENIKESH" as an EXTRUDED 3D wordmark rasterized to ASCII, and emit
-it as an SVG that animates on GitHub (SMIL only -- GitHub runs SVG animations
-in <img>, but never JS).
+Render "SREE" as an EXTRUDED 3D wordmark rasterized to ASCII,
+and emit it as an SVG that animates on GitHub.
+
+SMIL only -- GitHub runs SVG animations in <img>, but never JS.
 
 Based on the original AVIVASHISHTA29 implementation.
 """
@@ -14,52 +15,119 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# ---- geometry / grid ------------------------------------------------------
 
-COLS = int(os.environ.get("WORDMARK_COLS", 50))
+# ============================================================
+# GEOMETRY / GRID
+# ============================================================
+
+# More columns = more horizontal detail
+COLS = int(os.environ.get("WORDMARK_COLS", 80))
+
+# ROWS is calculated automatically by fit()
 ROWS = 0
 
-ROW_MARGIN = int(os.environ.get("WORDMARK_ROW_MARGIN", 5))
+# Extra vertical margin
+ROW_MARGIN = int(
+    os.environ.get("WORDMARK_ROW_MARGIN", 5)
+)
 
-CELL_W = 9.0
-CELL_H = 15.5
+# Smaller cells = smaller ASCII characters
+CELL_W = 6.0
+CELL_H = 10.0
 
-# Windows font
+
+# ============================================================
+# WINDOWS FONT
+# ============================================================
+
 FONT_PATH = os.environ.get(
     "WORDMARK_FONT",
     r"C:\Windows\Fonts\arialbd.ttf"
 )
 
-# Arial Bold is a normal .ttf file, not a .ttc collection.
-FONT_INDEX = int(os.environ.get("WORDMARK_FONT_INDEX", 0))
+# Arial Bold is a normal .ttf file
+FONT_INDEX = int(
+    os.environ.get(
+        "WORDMARK_FONT_INDEX",
+        0
+    )
+)
 
-# Your wordmark
-TEXT = os.environ.get("WORDMARK_TEXT", "SREE")
 
-MASK_H = 300
+# ============================================================
+# WORDMARK TEXT
+# ============================================================
+
+TEXT = os.environ.get(
+    "WORDMARK_TEXT",
+    "SREE"
+)
+
+
+# ============================================================
+# SOURCE MASK / 3D SETTINGS
+# ============================================================
+
+# Higher resolution source mask
+MASK_H = 400
+
+# Letter spacing
 TRACKING = 0.14
+
+# Line spacing
 LINE_GAP = 1.20
+
+# Extrusion depth
 DEPTH_FRAC = 0.34
 
-TILT_DEG = float(os.environ.get("WORDMARK_TILT", 4.0))
+
+# ============================================================
+# CAMERA / PERSPECTIVE
+# ============================================================
+
+TILT_DEG = float(
+    os.environ.get(
+        "WORDMARK_TILT",
+        4.0
+    )
+)
 
 CAM_DIST = 6.0
 FOCAL = 4.15
+
+# Controls how much of the available grid is occupied
 FIT = 0.92
 
-# sparse/dim -> dense/bright
-RAMP = " .`:-=+*csS#%@"
 
-LIGHT = np.array([-0.15, -0.45, -1.00])
+# ============================================================
+# ASCII CHARACTER RAMP
+# ============================================================
+
+# sparse/dim -> dense/bright
+RAMP = " .':-=+*csS%@"
+
+
+# ============================================================
+# LIGHTING
+# ============================================================
+
+LIGHT = np.array(
+    [-0.15, -0.45, -1.00]
+)
+
 LIGHT = LIGHT / np.linalg.norm(LIGHT)
 
 AMBIENT = 0.22
 FOG = 0.34
 FOG_SPAN = 0.55
 
-# ---- palette --------------------------------------------------------------
+
+# ============================================================
+# SVG PALETTE
+# ============================================================
 
 BG = "#0d1117"
 BG2 = "#111722"
@@ -71,64 +139,116 @@ PAD = 18
 TITLEBAR_H = 28
 
 
-# ---------------------------------------------------------------- voxel shell
+# ============================================================
+# BUILD 3D VOXEL SHELL
+# ============================================================
 
 def build_shell():
-    """Rasterize TEXT, then return (points Nx3, normals Nx3)."""
+    """
+    Rasterize TEXT and return:
 
-    probe = TEXT.replace("\n", "")
+        points Nx3
+        normals Nx3
+    """
+
+    probe = TEXT.replace(
+        "\n",
+        ""
+    )
+
     font_size = MASK_H
 
+    # Find a font size that fits within MASK_H
     for _ in range(40):
+
         font = ImageFont.truetype(
             FONT_PATH,
             font_size,
             index=FONT_INDEX
         )
 
-        l, t, r, b = font.getbbox(probe)
+        l, t, r, b = font.getbbox(
+            probe
+        )
 
         if b - t <= MASK_H:
             break
 
-        font_size = int(font_size * 0.92)
+        font_size = int(
+            font_size * 0.92
+        )
 
     h = b - t
 
-    track = int(round(TRACKING * font_size))
+    track = int(
+        round(
+            TRACKING * font_size
+        )
+    )
 
-    lines = TEXT.split("\n")
-    line_h = int(round(h * LINE_GAP))
+    lines = TEXT.split(
+        "\n"
+    )
+
+    line_h = int(
+        round(
+            h * LINE_GAP
+        )
+    )
 
     def line_w(s):
+
         return (
-            sum(font.getlength(c) for c in s)
-            + track * (len(s) - 1)
+            sum(
+                font.getlength(c)
+                for c in s
+            )
+            + track * (
+                len(s) - 1
+            )
         )
 
     total_w = int(
-        round(max(line_w(s) for s in lines))
+        round(
+            max(
+                line_w(s)
+                for s in lines
+            )
+        )
     ) + 8
 
     total_h = (
-        line_h * (len(lines) - 1)
+        line_h * (
+            len(lines) - 1
+        )
         + h
         + 8
     )
 
+    # Create grayscale mask
     img = Image.new(
         "L",
-        (total_w, total_h),
+        (
+            total_w,
+            total_h
+        ),
         0
     )
 
-    d = ImageDraw.Draw(img)
+    d = ImageDraw.Draw(
+        img
+    )
 
+    # Draw each letter
     for li, s in enumerate(lines):
 
         pen = (
             4.0
-            + (total_w - 8 - line_w(s)) / 2.0
+            + (
+                total_w
+                - 8
+                - line_w(s)
+            ) / 2.0
         )
 
         base = (
@@ -151,8 +271,12 @@ def build_shell():
                 + track
             )
 
-    mask = np.array(img) > 127
+    # Convert to binary mask
+    mask = np.array(
+        img
+    ) > 127
 
+    # Find actual occupied region
     xs_any = np.nonzero(
         mask.any(0)
     )[0]
@@ -168,17 +292,28 @@ def build_shell():
 
     H, W = mask.shape
 
+    # Calculate extrusion depth
     depth = max(
         4,
-        int(round(H * DEPTH_FRAC))
+        int(
+            round(
+                H * DEPTH_FRAC
+            )
+        )
     )
 
-    cy, cx = np.nonzero(mask)
+    cy, cx = np.nonzero(
+        mask
+    )
 
     pts = []
     nrm = []
 
-    # front cap
+
+    # ========================================================
+    # FRONT CAP
+    # ========================================================
+
     front = np.stack(
         [
             cx,
@@ -192,16 +327,25 @@ def build_shell():
         1
     )
 
-    pts.append(front)
+    pts.append(
+        front
+    )
 
     nrm.append(
         np.tile(
             [0.0, 0.0, -1.0],
-            (len(front), 1)
+            (
+                len(front),
+                1
+            )
         )
     )
 
-    # back cap
+
+    # ========================================================
+    # BACK CAP
+    # ========================================================
+
     back = np.stack(
         [
             cx,
@@ -212,18 +356,29 @@ def build_shell():
             )
         ],
         1
-    ).astype(float)
+    ).astype(
+        float
+    )
 
-    pts.append(back)
+    pts.append(
+        back
+    )
 
     nrm.append(
         np.tile(
             [0.0, 0.0, 1.0],
-            (len(back), 1)
+            (
+                len(back),
+                1
+            )
         )
     )
 
-    # side walls
+
+    # ========================================================
+    # SIDE WALLS
+    # ========================================================
+
     pad = np.pad(
         mask,
         1
@@ -256,23 +411,42 @@ def build_shell():
         | empty_u
     )
 
-    ey, ex = np.nonzero(edge)
+    ey, ex = np.nonzero(
+        edge
+    )
 
     nx = (
-        empty_r[ey, ex].astype(float)
-        - empty_l[ey, ex].astype(float)
+        empty_r[
+            ey,
+            ex
+        ].astype(float)
+        -
+        empty_l[
+            ey,
+            ex
+        ].astype(float)
     )
 
     ny = (
-        empty_d[ey, ex].astype(float)
-        - empty_u[ey, ex].astype(float)
+        empty_d[
+            ey,
+            ex
+        ].astype(float)
+        -
+        empty_u[
+            ey,
+            ex
+        ].astype(float)
     )
 
     ln = np.sqrt(
-        nx * nx + ny * ny
+        nx * nx
+        + ny * ny
     )
 
-    ln[ln == 0] = 1.0
+    ln[
+        ln == 0
+    ] = 1.0
 
     nx = nx / ln
     ny = ny / ln
@@ -280,7 +454,10 @@ def build_shell():
     zsteps = np.linspace(
         0,
         depth,
-        max(3, depth // 2)
+        max(
+            3,
+            depth // 2
+        )
     )
 
     for z in zsteps:
@@ -311,27 +488,44 @@ def build_shell():
             )
         )
 
+
+    # ========================================================
+    # COMBINE POINTS / NORMALS
+    # ========================================================
+
     P = np.concatenate(
         pts
-    ).astype(np.float32)
+    ).astype(
+        np.float32
+    )
 
     N = np.concatenate(
         nrm
-    ).astype(np.float32)
+    ).astype(
+        np.float32
+    )
 
-    # center and normalize
+    # Center
     P[:, 0] -= W / 2.0
     P[:, 1] -= H / 2.0
     P[:, 2] -= depth / 2.0
 
+    # Normalize
     P /= float(W)
 
     return P, N
 
 
+# ============================================================
+# ROTATION
+# ============================================================
+
 def rot_y(a):
 
-    c, s = math.cos(a), math.sin(a)
+    c, s = (
+        math.cos(a),
+        math.sin(a)
+    )
 
     return np.array(
         [
@@ -345,7 +539,10 @@ def rot_y(a):
 
 def rot_x(a):
 
-    c, s = math.cos(a), math.sin(a)
+    c, s = (
+        math.cos(a),
+        math.sin(a)
+    )
 
     return np.array(
         [
@@ -357,53 +554,89 @@ def rot_x(a):
     )
 
 
-def project(P, N, yaw):
+# ============================================================
+# PROJECT 3D OBJECT
+# ============================================================
 
-    """Rotate + perspective-divide."""
+def project(
+    P,
+    N,
+    yaw
+):
+
+    """
+    Rotate + perspective divide.
+    """
 
     M = (
-        rot_x(math.radians(TILT_DEG))
+        rot_x(
+            math.radians(
+                TILT_DEG
+            )
+        )
         @ rot_y(yaw)
     )
 
     p = P @ M.T
     n = N @ M.T
 
-    # back-face cull
+    # Back-face culling
     vis = n[:, 2] < 0.0
 
     p = p[vis]
     n = n[vis]
 
-    z = p[:, 2] + CAM_DIST
+    z = (
+        p[:, 2]
+        + CAM_DIST
+    )
 
-    f = FOCAL / z
+    f = (
+        FOCAL / z
+    )
 
     lam = n @ LIGHT
 
     inten = (
         AMBIENT
-        + (1 - AMBIENT)
-        * np.clip(lam, 0, 1)
+        + (
+            1 - AMBIENT
+        )
+        * np.clip(
+            lam,
+            0,
+            1
+        )
     )
 
-    # depth fog
+    # Depth fog
     t = np.clip(
-        (z - CAM_DIST) / FOG_SPAN,
+        (
+            z - CAM_DIST
+        )
+        / FOG_SPAN,
         -1.0,
         1.0
     )
 
     inten *= (
         1.0
-        - FOG * (t + 1.0) / 2.0
+        - FOG
+        * (
+            t + 1.0
+        )
+        / 2.0
     )
 
     idx = np.clip(
         (
             inten
-            * (len(RAMP) - 1)
-        ).round().astype(int),
+            * (
+                len(RAMP) - 1
+            )
+        )
+        .round()
+        .astype(int),
         1,
         len(RAMP) - 1
     )
@@ -416,24 +649,50 @@ def project(P, N, yaw):
     )
 
 
-def fit(projected):
+# ============================================================
+# FIT TO GRID
+# ============================================================
 
-    """Width-driven scale + offset."""
+def fit(
+    projected
+):
+
+    """
+    Width-driven scale + offset.
+
+    ROWS is calculated automatically from the
+    projected wordmark dimensions.
+    """
 
     global ROWS
 
     xs = np.concatenate(
-        [q[0] for q in projected]
+        [
+            q[0]
+            for q in projected
+        ]
     )
 
     ys = np.concatenate(
-        [q[1] for q in projected]
+        [
+            q[1]
+            for q in projected
+        ]
     )
 
-    x0, x1 = xs.min(), xs.max()
-    y0, y1 = ys.min(), ys.max()
+    x0, x1 = (
+        xs.min(),
+        xs.max()
+    )
 
-    ar = CELL_W / CELL_H
+    y0, y1 = (
+        ys.min(),
+        ys.max()
+    )
+
+    ar = (
+        CELL_W / CELL_H
+    )
 
     scale = (
         FIT
@@ -443,42 +702,74 @@ def fit(projected):
 
     ROWS = int(
         math.ceil(
-            (y1 - y0)
+            (
+                y1 - y0
+            )
             * ar
             * scale
         )
-    ) + 1 + 2 * ROW_MARGIN
+    ) + 1 + (
+        2 * ROW_MARGIN
+    )
 
     cx = (
         (COLS - 1) / 2.0
-        - (x0 + x1) / 2.0 * scale
+        -
+        (
+            x0 + x1
+        )
+        / 2.0
+        * scale
     )
 
     cy = (
         (ROWS - 1) / 2.0
-        - (y0 + y1) / 2.0
+        -
+        (
+            y0 + y1
+        )
+        / 2.0
         * scale
         * ar
     )
 
-    return scale, cx, cy
+    return (
+        scale,
+        cx,
+        cy
+    )
 
 
-def rasterize(q, scale, cx, cy):
+# ============================================================
+# RASTERIZE
+# ============================================================
 
-    """Z-buffer splat one projected frame."""
+def rasterize(
+    q,
+    scale,
+    cx,
+    cy
+):
+
+    """
+    Z-buffer splat one projected frame.
+    """
 
     x, y, z, idx = q
 
     col = np.round(
-        cx + x * scale
+        cx
+        + x * scale
     ).astype(int)
 
     row = np.round(
         cy
         + y
         * scale
-        * (CELL_W / CELL_H)
+        * (
+            CELL_W
+            / CELL_H
+        )
     ).astype(int)
 
     ok = (
@@ -494,11 +785,16 @@ def rasterize(q, scale, cx, cy):
     idx = idx[ok]
 
     grid = np.zeros(
-        (ROWS, COLS),
+        (
+            ROWS,
+            COLS
+        ),
         np.int8
     )
 
-    order = np.argsort(-z)
+    order = np.argsort(
+        -z
+    )
 
     grid[
         row[order],
@@ -514,14 +810,31 @@ def rasterize(q, scale, cx, cy):
     ]
 
 
-# ---------------------------------------------------------------------- svg
+# ============================================================
+# SVG OUTPUT
+# ============================================================
 
-def emit(frames, mode, out, dur, reveal):
+def emit(
+    frames,
+    mode,
+    out,
+    dur,
+    reveal
+):
 
-    art_w = COLS * CELL_W
-    art_h = ROWS * CELL_H
+    art_w = (
+        COLS * CELL_W
+    )
 
-    canvas_w = art_w + PAD * 2
+    art_h = (
+        ROWS * CELL_H
+    )
+
+    canvas_w = (
+        art_w
+        + PAD * 2
+    )
+
     canvas_h = (
         TITLEBAR_H
         + art_h
@@ -533,9 +846,14 @@ def emit(frames, mode, out, dur, reveal):
         + PAD * 0.3
     )
 
-    fs = CELL_H * 0.92
+    # Font size follows CELL_H
+    fs = (
+        CELL_H * 0.92
+    )
 
-    n = len(frames)
+    n = len(
+        frames
+    )
 
     p = [
 
@@ -559,12 +877,14 @@ def emit(frames, mode, out, dur, reveal):
 
         f'<rect width="{canvas_w:.0f}" '
         f'height="{canvas_h:.0f}" '
-        f'rx="12" fill="url(#wbg)"/>',
+        f'rx="12" '
+        f'fill="url(#wbg)"/>',
 
         f'<rect x="0.5" y="0.5" '
         f'width="{canvas_w-1:.0f}" '
         f'height="{canvas_h-1:.0f}" '
-        f'rx="12" fill="none" '
+        f'rx="12" '
+        f'fill="none" '
         f'stroke="{FRAME}" '
         f'stroke-width="1"/>',
 
@@ -574,6 +894,11 @@ def emit(frames, mode, out, dur, reveal):
         f'y2="{TITLEBAR_H}" '
         f'stroke="{FRAME}"/>',
     ]
+
+
+    # ========================================================
+    # TERMINAL DOTS
+    # ========================================================
 
     for i, dot in enumerate(
         [
@@ -591,6 +916,11 @@ def emit(frames, mode, out, dur, reveal):
             f'fill="{dot}"/>'
         )
 
+
+    # ========================================================
+    # TERMINAL TITLE
+    # ========================================================
+
     p.append(
         f'<text '
         f'x="{canvas_w/2:.0f}" '
@@ -603,24 +933,37 @@ def emit(frames, mode, out, dur, reveal):
         f'</text>'
     )
 
-    def frame_g(rows, extra=""):
+
+    # ========================================================
+    # FRAME GENERATOR
+    # ========================================================
+
+    def frame_g(
+        rows,
+        extra=""
+    ):
 
         out_rows = []
 
-        for ry, line in enumerate(rows):
+        for ry, line in enumerate(
+            rows
+        ):
 
             s = line.rstrip()
 
             if not s.strip():
                 continue
 
-            lead = len(
-                s
-            ) - len(
-                s.lstrip(" ")
+            lead = (
+                len(s)
+                - len(
+                    s.lstrip(" ")
+                )
             )
 
-            body = s[lead:]
+            body = s[
+                lead:
+            ]
 
             x = (
                 PAD
@@ -648,33 +991,58 @@ def emit(frames, mode, out, dur, reveal):
 
         return (
             f'<g fill="{INK}"{extra}>'
-            + "".join(out_rows)
+            + "".join(
+                out_rows
+            )
             + "</g>"
         )
+
+
+    # ========================================================
+    # STATIC MODE
+    # ========================================================
 
     if mode == "static":
 
         p.append(
-            frame_g(frames[0])
+            frame_g(
+                frames[0]
+            )
         )
 
-        p.append("</svg>")
+        p.append(
+            "</svg>"
+        )
 
-        with open(out, "w") as fh:
-            fh.write("".join(p))
+        with open(
+            out,
+            "w"
+        ) as fh:
 
-        print("wrote", out)
+            fh.write(
+                "".join(p)
+            )
+
+        print(
+            "wrote",
+            out
+        )
 
         return
 
-    # intro wipe
+
+    # ========================================================
+    # INTRO WIPE
+    # ========================================================
+
     p.append(
         f'<clipPath id="wipe">'
         f'<rect x="{PAD}" '
         f'y="{art_top:.1f}" '
         f'height="{art_h:.1f}" '
         f'width="0">'
-        f'<animate attributeName="width" '
+        f'<animate '
+        f'attributeName="width" '
         f'from="0" '
         f'to="{art_w:.0f}" '
         f'begin="0s" '
@@ -684,14 +1052,21 @@ def emit(frames, mode, out, dur, reveal):
         f'</clipPath>'
     )
 
+
     p.append(
         f'<g clip-path="url(#wipe)">'
         f'{frame_g(frames[0])}'
-        f'<set attributeName="opacity" '
+        f'<set '
+        f'attributeName="opacity" '
         f'to="0" '
         f'begin="{reveal:.2f}s"/>'
         f'</g>'
     )
+
+
+    # ========================================================
+    # SCANNING CURSOR
+    # ========================================================
 
     p.append(
         f'<rect x="{PAD}" '
@@ -700,23 +1075,34 @@ def emit(frames, mode, out, dur, reveal):
         f'height="{art_h-4:.1f}" '
         f'fill="{INK}" '
         f'opacity="0.16">'
-        f'<animate attributeName="x" '
+        f'<animate '
+        f'attributeName="x" '
         f'from="{PAD}" '
         f'to="{PAD+art_w:.0f}" '
         f'begin="0s" '
         f'dur="{reveal:.2f}s" '
         f'fill="freeze"/>'
-        f'<set attributeName="opacity" '
+        f'<set '
+        f'attributeName="opacity" '
         f'to="0" '
         f'begin="{reveal:.2f}s"/>'
         f'</rect>'
     )
 
+
+    # ========================================================
+    # ONCE MODE
+    # ========================================================
+
     if mode == "once":
 
-        step = dur / n
+        step = (
+            dur / n
+        )
 
-        for i, rows in enumerate(frames):
+        for i, rows in enumerate(
+            frames
+        ):
 
             begin = (
                 reveal
@@ -746,14 +1132,21 @@ def emit(frames, mode, out, dur, reveal):
                     ' opacity="0"'
                 ).replace(
                     "</g>",
-                    sets + "</g>"
+                    sets
+                    + "</g>"
                 )
             )
 
+
+    # ========================================================
+    # LOOPING MODES
+    # ========================================================
+
     else:
 
-        # cycle forever
-        for i, rows in enumerate(frames):
+        for i, rows in enumerate(
+            frames
+        ):
 
             if i == 0:
 
@@ -789,16 +1182,32 @@ def emit(frames, mode, out, dur, reveal):
                     ' opacity="0"'
                 ).replace(
                     "</g>",
-                    anim + "</g>"
+                    anim
+                    + "</g>"
                 )
             )
 
-    p.append("</svg>")
 
-    svg = "".join(p)
+    # ========================================================
+    # WRITE SVG
+    # ========================================================
 
-    with open(out, "w") as fh:
-        fh.write(svg)
+    p.append(
+        "</svg>"
+    )
+
+    svg = "".join(
+        p
+    )
+
+    with open(
+        out,
+        "w"
+    ) as fh:
+
+        fh.write(
+            svg
+        )
 
     print(
         f"wrote {out} "
@@ -807,6 +1216,10 @@ def emit(frames, mode, out, dur, reveal):
         f"{canvas_w:.0f}x{canvas_h:.0f}"
     )
 
+
+# ============================================================
+# MAIN
+# ============================================================
 
 def main():
 
@@ -854,14 +1267,27 @@ def main():
 
     a = ap.parse_args()
 
+
+    # Build 3D shell
     P, N = build_shell()
 
-    # rest pose
-    rest = math.radians(-13)
+
+    # Rest pose
+    rest = math.radians(
+        -13
+    )
+
+
+    # ========================================================
+    # SPIN
+    # ========================================================
 
     if a.mode == "spin":
 
-        nf = a.frames or 36
+        nf = (
+            a.frames
+            or 36
+        )
 
         yaws = [
             rest
@@ -869,26 +1295,51 @@ def main():
             for i in range(nf)
         ]
 
-        dur = a.dur or 7.0
+        dur = (
+            a.dur
+            or 7.0
+        )
+
+
+    # ========================================================
+    # ONCE
+    # ========================================================
 
     elif a.mode == "once":
 
-        nf = a.frames or 32
+        nf = (
+            a.frames
+            or 32
+        )
 
         yaws = [
             rest
             + 2 * math.pi * i / nf
             for i in range(nf)
-        ] + [rest]
+        ] + [
+            rest
+        ]
 
-        dur = a.dur or 3.6
+        dur = (
+            a.dur
+            or 3.6
+        )
+
+
+    # ========================================================
+    # ROCK
+    # ========================================================
 
     else:
 
-        # rock mode
-        nf = a.frames or 20
+        nf = (
+            a.frames
+            or 20
+        )
 
-        amp = math.radians(11)
+        amp = math.radians(
+            11
+        )
 
         yaws = [
             rest
@@ -899,14 +1350,38 @@ def main():
             for i in range(nf)
         ]
 
-        dur = a.dur or 5.0
+        dur = (
+            a.dur
+            or 5.0
+        )
+
+
+    # ========================================================
+    # PROJECT FRAMES
+    # ========================================================
 
     proj = [
-        project(P, N, y)
+        project(
+            P,
+            N,
+            y
+        )
         for y in yaws
     ]
 
-    scale, cx, cy = fit(proj)
+
+    # ========================================================
+    # FIT TO GRID
+    # ========================================================
+
+    scale, cx, cy = fit(
+        proj
+    )
+
+
+    # ========================================================
+    # RASTERIZE FRAMES
+    # ========================================================
 
     frames = [
         rasterize(
@@ -918,6 +1393,11 @@ def main():
         for q in proj
     ]
 
+
+    # ========================================================
+    # ASCII PREVIEW
+    # ========================================================
+
     if a.preview:
 
         for row in frames[0]:
@@ -928,6 +1408,11 @@ def main():
 
         return
 
+
+    # ========================================================
+    # OUTPUT PATH
+    # ========================================================
+
     out = (
         a.out
         or os.path.join(
@@ -936,6 +1421,11 @@ def main():
             f"wordmark-{a.mode}.svg"
         )
     )
+
+
+    # ========================================================
+    # EMIT SVG
+    # ========================================================
 
     emit(
         frames,
